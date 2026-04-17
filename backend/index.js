@@ -24,6 +24,8 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/analyze', require('./routes/analyze'));
 app.use('/api/resume', require('./routes/resume'));
 app.use('/api/templates', require('./routes/templates'));
+app.use('/api/payment', require('./routes/payment'));
+app.use('/api/interview', require('./routes/interview'));
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'ResumeAI API is running', timestamp: new Date().toISOString() });
