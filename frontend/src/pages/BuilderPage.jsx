@@ -52,8 +52,23 @@ export default function BuilderPage() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      await api.post('/resume', { ...data, template, title: `${data.personal.name || 'My'} Resume` })
-      toast.success('Resume saved successfully!')
+      const isEditing = Boolean(data._id)
+      const { _id, ...resumeFields } = data
+      const payload = {
+        ...resumeFields,
+        template,
+        title: `${data.personal.name || 'My'} Resume`,
+      }
+
+      const response = isEditing
+        ? await api.put(`/resume/${_id}`, payload)
+        : await api.post('/resume', payload)
+
+      const savedResume = response.data?.data
+      if (savedResume?._id) {
+        setData(prev => ({ ...prev, _id: savedResume._id }))
+      }
+      toast.success(isEditing ? 'Resume updated successfully!' : 'Resume saved successfully!')
     } catch {
       // Not logged in or server off — save locally
       localStorage.setItem('rai_draft', JSON.stringify({ data, template }))

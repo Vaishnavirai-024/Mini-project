@@ -8,10 +8,8 @@ dotenv.config();
 
 const app = express();
 
-// Connect to MongoDB
 connectDB();
 
-// Middleware
 app.use(cors({
   origin: process.env.CLIENT_URL || 'http://localhost:5173',
   credentials: true,
@@ -19,7 +17,6 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Static uploads folder
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Routes
@@ -28,12 +25,10 @@ app.use('/api/analyze', require('./routes/analyze'));
 app.use('/api/resume', require('./routes/resume'));
 app.use('/api/templates', require('./routes/templates'));
 
-// Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'ResumeAI API is running', timestamp: new Date().toISOString() });
 });
 
-// Global error handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(err.status || 500).json({

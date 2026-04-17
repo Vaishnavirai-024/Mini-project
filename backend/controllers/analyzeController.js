@@ -1,6 +1,8 @@
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const User = require('../models/User');
+const jwt = require('jsonwebtoken');
 
 // Multer config
 const storage = multer.diskStorage({
@@ -145,6 +147,28 @@ const analyzeUpload = async (req, res) => {
     }
 
     const result = calculateATSScore(resumeText, jobDescription);
+
+    let user = req.user;
+    if (!user && req.headers.authorization?.startsWith('Bearer')) {
+      try {
+        const token = req.headers.authorization.split(' ')[1];
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
+        user = await User.findById(decoded.id);
+      } catch (e) {
+        // ignore token errors for optional auth
+      }
+    }
+
+    // Save history to user if authenticated
+    if (user) {
+      user.analysisHistory.push({
+        score: result.score,
+        matchPercent: result.matchPercent,
+        jobTitle: req.body.jobTitle || 'Analyzed Resume'
+      });
+      await user.save();
+    }
+
     res.json({ success: true, data: result });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -154,11 +178,33 @@ const analyzeUpload = async (req, res) => {
 // @route   POST /api/analyze/text
 const analyzeText = async (req, res) => {
   try {
-    const { resumeText, jobDescription } = req.body;
+    const { resumeText, jobDescription, jobTitle } = req.body;
     if (!resumeText?.trim()) {
       return res.status(400).json({ success: false, message: 'Resume text is required' });
     }
     const result = calculateATSScore(resumeText, jobDescription || '');
+
+    let user = req.user;
+    if (!user && req.headers.authorization?.startsWith('Bearer')) {
+      try {
+        const token = req.headers.authorization.split(' ')[1];
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
+        user = await User.findById(decoded.id);
+      } catch (e) {
+        // ignore token errors for optional auth
+      }
+    }
+
+    // Save history to user if authenticated
+    if (user) {
+      user.analysisHistory.push({
+        score: result.score,
+        matchPercent: result.matchPercent,
+        jobTitle: jobTitle || req.body.jobTitle || 'Analyzed Resume'
+      });
+      await user.save();
+    }
+
     res.json({ success: true, data: result });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
