@@ -30,6 +30,11 @@ const userSchema = new mongoose.Schema({
     enum: ['free', 'pro'],
     default: 'free',
   },
+  credits: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
   analysisHistory: [{
     score: Number,
     matchPercent: Number,
