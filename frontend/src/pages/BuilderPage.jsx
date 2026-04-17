@@ -45,6 +45,7 @@ export default function BuilderPage() {
   const [template, setTemplate]       = useState('classic')
   const [saving, setSaving]           = useState(false)
   const [showPreview, setShowPreview] = useState(false) // mobile toggle
+  const [resumeId, setResumeId]       = useState(null) // Track existing resume ID
   const previewRef = useRef(null)
 
   const handlePrint = useReactToPrint({ content: () => previewRef.current, documentTitle: `${data.personal.name || 'Resume'} - ResumeAI` })
@@ -52,23 +53,19 @@ export default function BuilderPage() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      const isEditing = Boolean(data._id)
-      const { _id, ...resumeFields } = data
-      const payload = {
-        ...resumeFields,
-        template,
-        title: `${data.personal.name || 'My'} Resume`,
+      if (resumeId) {
+        // Update existing resume
+        await api.put(`/resume/${resumeId}`, { ...data, template, title: `${data.personal.name || 'My'} Resume` })
+        toast.success('Resume updated successfully!')
+      } else {
+        // Create new resume
+        const response = await api.post('/resume', { ...data, template, title: `${data.personal.name || 'My'} Resume` })
+        // Assume API returns created document with _id
+        if (response.data && response.data._id) {
+          setResumeId(response.data._id)
+        }
+        toast.success('Resume saved successfully!')
       }
-
-      const response = isEditing
-        ? await api.put(`/resume/${_id}`, payload)
-        : await api.post('/resume', payload)
-
-      const savedResume = response.data?.data
-      if (savedResume?._id) {
-        setData(prev => ({ ...prev, _id: savedResume._id }))
-      }
-      toast.success(isEditing ? 'Resume updated successfully!' : 'Resume saved successfully!')
     } catch {
       // Not logged in or server off — save locally
       localStorage.setItem('rai_draft', JSON.stringify({ data, template }))

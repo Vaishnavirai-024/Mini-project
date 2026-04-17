@@ -7,6 +7,28 @@ const paymentSchema = new mongoose.Schema({
     required: true,
     index: true,
   },
+
+  razorpayOrderId: {
+    type: String,
+    required: [true, 'Razorpay Order ID is required'],
+    unique: true,
+    trim: true,
+  },
+  razorpayPaymentId: {
+    type: String,
+    unique: true,
+    sparse: true, // allows null until payment is captured
+    trim: true,
+  },
+  razorpaySignature: {
+    type: String,
+    trim: true,
+  },
+  amount: {
+    type: Number,
+    required: [true, 'Amount is required'],
+    min: [0, 'Amount cannot be negative'],
+=======
   orderId: {
     type: String,
     required: true,
@@ -27,11 +49,40 @@ const paymentSchema = new mongoose.Schema({
     type: Number,
     required: true,
     min: 1,
+
+    
   },
   currency: {
     type: String,
     default: 'INR',
     uppercase: true,
+
+  },
+  status: {
+    type: String,
+    enum: ['created', 'authorized', 'captured', 'refunded', 'failed'],
+    default: 'created',
+  },
+  plan: {
+    type: String,
+    enum: ['pro-monthly', 'pro-yearly', 'credits-pack'],
+    required: [true, 'Plan type is required'],
+  },
+  creditsAwarded: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  receipt: {
+    type: String,
+    trim: true,
+  },
+  failureReason: {
+    type: String,
+    default: '',
+  },
+  paidAt: {
+
     trim: true,
   },
   credits: {
@@ -59,8 +110,26 @@ const paymentSchema = new mongoose.Schema({
     default: {},
   },
   verifiedAt: {
+
     type: Date,
   },
 }, { timestamps: true });
 
+
+// ─── Indexes ────────────────────────────────────────────────────────
+paymentSchema.index({ user: 1, createdAt: -1 });
+paymentSchema.index({ status: 1 });
+paymentSchema.index({ razorpayOrderId: 1 }, { unique: true });
+
+// ─── Pre-save: set paidAt when status changes to captured ──────────
+paymentSchema.pre('save', function (next) {
+  if (this.isModified('status') && this.status === 'captured' && !this.paidAt) {
+    this.paidAt = new Date();
+  }
+  next();
+});
+
 module.exports = mongoose.model('Payment', paymentSchema);
+
+module.exports = mongoose.model('Payment', paymentSchema);
+

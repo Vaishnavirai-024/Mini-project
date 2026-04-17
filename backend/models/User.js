@@ -32,14 +32,33 @@ const userSchema = new mongoose.Schema({
   },
   credits: {
     type: Number,
+
+    default: 100,
+    min: [0, 'Credits cannot be negative'],
+
     default: 0,
     min: 0,
+
   },
   analysisHistory: [{
-    score: Number,
-    matchPercent: Number,
-    jobTitle: String,
-    createdAt: { type: Date, default: Date.now },
+    atsScore: {
+      type: Number,
+      min: 0,
+      max: 100,
+    },
+    matchPercentage: {
+      type: Number,
+      min: 0,
+      max: 100,
+    },
+    role: {
+      type: String,
+      trim: true,
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
   }],
 }, { timestamps: true });
 
