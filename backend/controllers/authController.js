@@ -28,7 +28,7 @@ const register = async (req, res) => {
     res.status(201).json({
       success: true,
       token,
-      user: { id: user._id, name: user.name, email: user.email, plan: user.plan },
+      user: { id: user._id, name: user.name, email: user.email, plan: user.plan, credits: user.credits },
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -51,7 +51,7 @@ const login = async (req, res) => {
       return res.json({
         success: true,
         token,
-        user: { id: 'demo-user-id', name: 'Demo User', email: 'demo@resumeai.com', plan: 'pro' },
+        user: { id: 'demo-user-id', name: 'Demo User', email: 'demo@resumeai.com', plan: 'pro', credits: 0 },
       });
     }
 
@@ -64,7 +64,7 @@ const login = async (req, res) => {
     res.json({
       success: true,
       token,
-      user: { id: user._id, name: user.name, email: user.email, plan: user.plan },
+      user: { id: user._id, name: user.name, email: user.email, plan: user.plan, credits: user.credits },
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

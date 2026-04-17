@@ -7,6 +7,7 @@ const paymentSchema = new mongoose.Schema({
     required: true,
     index: true,
   },
+
   razorpayOrderId: {
     type: String,
     required: [true, 'Razorpay Order ID is required'],
@@ -27,11 +28,35 @@ const paymentSchema = new mongoose.Schema({
     type: Number,
     required: [true, 'Amount is required'],
     min: [0, 'Amount cannot be negative'],
+=======
+  orderId: {
+    type: String,
+    required: true,
+    unique: true,
+    index: true,
+  },
+  paymentId: {
+    type: String,
+    unique: true,
+    sparse: true,
+    index: true,
+  },
+  signature: {
+    type: String,
+    default: '',
+  },
+  amount: {
+    type: Number,
+    required: true,
+    min: 1,
+
+    
   },
   currency: {
     type: String,
     default: 'INR',
     uppercase: true,
+
   },
   status: {
     type: String,
@@ -57,9 +82,39 @@ const paymentSchema = new mongoose.Schema({
     default: '',
   },
   paidAt: {
+
+    trim: true,
+  },
+  credits: {
+    type: Number,
+    required: true,
+    default: 150,
+    min: 1,
+  },
+  status: {
+    type: String,
+    enum: ['created', 'paid', 'failed'],
+    default: 'created',
+    index: true,
+  },
+  receipt: {
+    type: String,
+    default: '',
+  },
+  gateway: {
+    type: String,
+    default: 'razorpay',
+  },
+  notes: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {},
+  },
+  verifiedAt: {
+
     type: Date,
   },
 }, { timestamps: true });
+
 
 // ─── Indexes ────────────────────────────────────────────────────────
 paymentSchema.index({ user: 1, createdAt: -1 });
@@ -75,3 +130,6 @@ paymentSchema.pre('save', function (next) {
 });
 
 module.exports = mongoose.model('Payment', paymentSchema);
+
+module.exports = mongoose.model('Payment', paymentSchema);
+

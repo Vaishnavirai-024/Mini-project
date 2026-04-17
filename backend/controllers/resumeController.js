@@ -1,4 +1,4 @@
-const Resume = require('../models/Resume');
+const Resume = require('../models/resumeModel');
 
 // @desc    Get all resumes for user
 // @route   GET /api/resume
@@ -27,7 +27,15 @@ const getResume = async (req, res) => {
 // @route   POST /api/resume
 const createResume = async (req, res) => {
   try {
-    const resume = await Resume.create({ ...req.body, user: req.user._id });
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: "PDF file required" });
+    }
+
+    const resume = await Resume.create({
+      user: req.user._id,
+      fileUrl: req.file.path
+    });
+
     res.status(201).json({ success: true, data: resume });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -38,12 +46,22 @@ const createResume = async (req, res) => {
 // @route   PUT /api/resume/:id
 const updateResume = async (req, res) => {
   try {
+    const updateData = {};
+
+    if (req.file) {
+      updateData.fileUrl = req.file.path;
+    }
+
     const resume = await Resume.findOneAndUpdate(
       { _id: req.params.id, user: req.user._id },
-      { ...req.body, lastModified: Date.now() },
-      { new: true, runValidators: true }
+      updateData,
+      { new: true }
     );
-    if (!resume) return res.status(404).json({ success: false, message: 'Resume not found' });
+
+    if (!resume) {
+      return res.status(404).json({ success: false, message: "Resume not found" });
+    }
+
     res.json({ success: true, data: resume });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
