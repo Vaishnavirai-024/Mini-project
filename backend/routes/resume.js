@@ -1,13 +1,28 @@
 const express = require('express');
 const router = express.Router();
+
 const { protect } = require('../middleware/auth');
+const upload = require('../middleware/multer');
+
 const {
-  getResumes, getResume, createResume, updateResume, deleteResume,
+  getResumes,
+  getResume,
+  createResume,
+  updateResume,
+  deleteResume,
 } = require('../controllers/resumeController');
 
-router.use(protect); // All resume routes require auth
+// All routes protected
+router.use(protect);
 
-router.route('/').get(getResumes).post(createResume);
-router.route('/:id').get(getResume).put(updateResume).delete(deleteResume);
+// Routes
+router.route('/')
+  .get(getResumes)
+  .post(upload.single("resume"), createResume);
+
+router.route('/:id')
+  .get(getResume)
+  .put(upload.single("resume"), updateResume)
+  .delete(deleteResume);
 
 module.exports = router;
