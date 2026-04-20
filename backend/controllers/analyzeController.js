@@ -1,212 +1,151 @@
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
-const User = require('../models/User');
 const jwt = require('jsonwebtoken');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const User = require('../models/User');
+const { callGeminiWithRetry } = require('../utils/geminiRetry');
 
-// Multer config
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = path.join(__dirname, '../uploads');
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => {
-    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `resume-${unique}${path.extname(file.originalname)}`);
-  },
-});
+// Initialize Gemini
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+// Memory Storage (Cloud-ready, avoids saving to local disk)
+const storage = multer.memoryStorage();
 const fileFilter = (req, file, cb) => {
-  const allowed = ['.pdf', '.doc', '.docx', '.txt'];
-  const ext = path.extname(file.originalname).toLowerCase();
-  if (allowed.includes(ext)) cb(null, true);
-  else cb(new Error('Only PDF, DOC, DOCX, and TXT files are allowed'), false);
+  if (file.mimetype === 'application/pdf') cb(null, true);
+  else cb(new Error('Only PDF files are allowed for ATS analysis'), false);
 };
-
 const upload = multer({ storage, fileFilter, limits: { fileSize: 5 * 1024 * 1024 } });
 
-// ATS keyword bank
-const ATS_KEYWORDS = {
-  tech: ['React', 'Node.js', 'TypeScript', 'JavaScript', 'Python', 'AWS', 'Docker', 'MongoDB', 'PostgreSQL', 'Redis', 'GraphQL', 'REST API', 'Kubernetes', 'CI/CD', 'Git', 'Jest', 'Express', 'Vue', 'Angular', 'SQL'],
-  soft: ['Leadership', 'Agile', 'Scrum', 'Communication', 'Problem Solving', 'Teamwork', 'Project Management', 'Mentoring'],
-  action: ['Led', 'Built', 'Developed', 'Implemented', 'Optimized', 'Designed', 'Managed', 'Improved', 'Delivered', 'Created'],
-};
-
-// Extract text from uploaded file
-const extractText = async (filePath, mimeType) => {
-  const ext = path.extname(filePath).toLowerCase();
-  if (ext === '.txt') {
-    return fs.readFileSync(filePath, 'utf8');
+const getUserIdFromRequest = (req) => {
+  if (req.user?._id || req.user?.id) {
+    return req.user._id || req.user.id;
   }
-  if (ext === '.pdf') {
-    try {
-      const pdfParse = require('pdf-parse');
-      const dataBuffer = fs.readFileSync(filePath);
-      const data = await pdfParse(dataBuffer);
-      return data.text;
-    } catch (e) {
-      return '';
-    }
+
+  const authHeader = req.headers.authorization || '';
+  if (!authHeader.startsWith('Bearer ')) {
+    return null;
   }
-  // For .doc/.docx return empty (would need mammoth in production)
-  return '';
+
+  try {
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
+    return decoded.id || null;
+  } catch (error) {
+    return null;
+  }
 };
 
-// Score calculation engine
-const calculateATSScore = (resumeText, jobDescription) => {
-  const resumeLower = resumeText.toLowerCase();
-  const jdLower = (jobDescription || '').toLowerCase();
-
-  // Extract JD keywords
-  const jdWords = jdLower
-    .split(/[\s,.\n;:()[\]{}]+/)
-    .filter(w => w.length > 3)
-    .map(w => w.replace(/[^a-z0-9.]/g, ''))
-    .filter(Boolean);
-
-  const allKeywords = [...ATS_KEYWORDS.tech, ...ATS_KEYWORDS.soft];
-
-  // Matched vs missing keywords
-  const matched = allKeywords.filter(kw => resumeLower.includes(kw.toLowerCase()));
-  const jdSpecific = jdWords.filter(w =>
-    allKeywords.some(k => k.toLowerCase().includes(w) || w.includes(k.toLowerCase().slice(0, 4)))
-  );
-  const missing = allKeywords.filter(kw =>
-    !resumeLower.includes(kw.toLowerCase()) &&
-    (jdLower.includes(kw.toLowerCase()) || Math.random() < 0.3)
-  ).slice(0, 6);
-
-  // Action verbs check
-  const actionVerbCount = ATS_KEYWORDS.action.filter(v => resumeText.includes(v)).length;
-
-  // Format checks
-  const hasEmail = /[\w.-]+@[\w.-]+\.\w+/.test(resumeText);
-  const hasPhone = /[\d\-().+\s]{10,}/.test(resumeText);
-  const hasLinkedIn = /linkedin\.com/i.test(resumeText);
-  const hasBullets = (resumeText.match(/[•\-*]\s/g) || []).length > 3;
-  const hasQuantified = /\d+%|\d+x|\$\d+|\d+\+/g.test(resumeText);
-
-  // Scoring
-  let score = 40; // Base
-  score += Math.min(matched.length * 3, 25);     // Keyword match: up to 25
-  score += actionVerbCount > 5 ? 10 : actionVerbCount * 2;  // Action verbs: up to 10
-  score += hasEmail ? 3 : 0;
-  score += hasPhone ? 2 : 0;
-  score += hasBullets ? 5 : 0;
-  score += hasQuantified ? 5 : 0;
-  score += hasLinkedIn ? 3 : 0;
-  score += jobDescription ? (jdSpecific.length > 5 ? 7 : jdSpecific.length) : 0;
-
-  score = Math.min(score, 98);
-
-  const matchPercent = jobDescription
-    ? Math.round((matched.length / Math.max(allKeywords.length * 0.5, 1)) * 100)
-    : Math.round(score * 0.9);
-
-  // AI Tips
-  const tips = [];
-  if (!hasQuantified) tips.push('Add quantifiable achievements (e.g., "Improved performance by 40%", "Led a team of 8")');
-  if (actionVerbCount < 5) tips.push('Start each bullet point with a strong action verb (Led, Built, Optimized, Delivered)');
-  if (missing.length > 3) tips.push(`Add missing keywords: ${missing.slice(0, 3).join(', ')} — these appear in many job descriptions`);
-  if (!hasBullets) tips.push('Use bullet points for your experience section to improve ATS parsing accuracy');
-  if (!hasLinkedIn) tips.push('Include your LinkedIn profile URL in your contact section');
-  tips.push('Keep resume under 2 pages and avoid tables, columns, headers/footers for best ATS compatibility');
-  tips.push('Tailor your skills section to mirror exact keywords from the job description');
-
-  return {
-    score: Math.round(score),
-    matchPercent: Math.min(matchPercent, 98),
-    matched: matched.slice(0, 10),
-    missing: missing.slice(0, 6),
-    tips: tips.slice(0, 5),
-    breakdown: {
-      keywordScore: Math.min(matched.length * 3, 25),
-      formatScore: (hasEmail ? 3 : 0) + (hasPhone ? 2 : 0) + (hasBullets ? 5 : 0),
-      actionVerbScore: Math.min(actionVerbCount * 2, 10),
-      quantificationScore: hasQuantified ? 5 : 0,
-    },
-  };
-};
-
-// @route   POST /api/analyze/upload
+// ─── @desc    Analyze PDF Resume using Gemini 2.5 Flash
+// ─── @route   POST /api/analyze/upload
 const analyzeUpload = async (req, res) => {
   try {
-    const filePath = req.file?.path;
-    const jobDescription = req.body.jobDescription || '';
-    let resumeText = req.body.resumeText || '';
-
-    if (filePath) {
-      resumeText = await extractText(filePath, req.file.mimetype);
-      // Cleanup uploaded file after extraction
-      setTimeout(() => fs.unlink(filePath, () => {}), 5000);
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'Please upload a PDF resume.' });
     }
 
-    if (!resumeText.trim()) {
-      return res.status(400).json({ success: false, message: 'No resume text could be extracted. Please paste your resume text.' });
-    }
-
-    const result = calculateATSScore(resumeText, jobDescription);
-
-    let user = req.user;
-    if (!user && req.headers.authorization?.startsWith('Bearer')) {
-      try {
-        const token = req.headers.authorization.split(' ')[1];
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
-        user = await User.findById(decoded.id);
-      } catch (e) {
-        // ignore token errors for optional auth
+    const jobDescription = req.body.jobDescription || 'General Software Engineering Role';
+    
+    // Prepare the PDF buffer for Gemini
+    const pdfPart = {
+      inlineData: {
+        data: req.file.buffer.toString("base64"),
+        mimeType: "application/pdf"
       }
-    }
+    };
 
-    // Save history to user if authenticated
-    if (user) {
-      user.analysisHistory.push({
-        score: result.score,
-        matchPercent: result.matchPercent,
-        jobTitle: req.body.jobTitle || 'Analyzed Resume'
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+    const prompt = `
+      Act as an Expert ATS Analyzer. Review this resume against the following Job Description: "${jobDescription}".
+      Return STRICTLY a raw JSON object without markdown formatting. The JSON must have:
+      {
+        "atsScore": <number 0-100>,
+        "matchPercent": <number 0-100>,
+        "matched": ["keyword1", "keyword2", ...up to 10],
+        "missing": ["keyword1", "keyword2", ...up to 6],
+        "tips": ["tip 1", "tip 2", ...up to 5],
+        "detectedRole": "<detected job role>"
+      }
+    `;
+
+    // Call Gemini with Prompt + PDF file
+    const result = await callGeminiWithRetry(model, [prompt, pdfPart]);
+    const responseText = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+    const aiResponse = JSON.parse(responseText);
+
+    const userId = getUserIdFromRequest(req);
+
+    if (userId) {
+      await User.findByIdAndUpdate(userId, {
+        $push: {
+          analysisHistory: {
+            atsScore: aiResponse.atsScore,
+            matchPercentage: aiResponse.matchPercent,
+            role: aiResponse.detectedRole,
+          }
+        }
       });
-      await user.save();
     }
 
-    res.json({ success: true, data: result });
+    res.json({ success: true, data: aiResponse });
+
   } catch (error) {
+    console.error("ATS Analysis Error:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// @route   POST /api/analyze/text
+// ─── @desc    Analyze Resume Text using Gemini 2.5 Flash
+// ─── @route   POST /api/analyze/text
 const analyzeText = async (req, res) => {
   try {
-    const { resumeText, jobDescription, jobTitle } = req.body;
-    if (!resumeText?.trim()) {
-      return res.status(400).json({ success: false, message: 'Resume text is required' });
-    }
-    const result = calculateATSScore(resumeText, jobDescription || '');
+    const { resumeText, jobDescription } = req.body;
 
-    let user = req.user;
-    if (!user && req.headers.authorization?.startsWith('Bearer')) {
-      try {
-        const token = req.headers.authorization.split(' ')[1];
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
-        user = await User.findById(decoded.id);
-      } catch (e) {
-        // ignore token errors for optional auth
+    if (!resumeText || !resumeText.trim()) {
+      return res.status(400).json({ success: false, message: 'Please provide resume text.' });
+    }
+
+    const jd = jobDescription || 'General Software Engineering Role';
+    
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+    const prompt = `
+      Act as an Expert ATS Analyzer. Review this resume against the following Job Description: "${jd}".
+      Resume Text:
+      ${resumeText}
+      
+      Return STRICTLY a raw JSON object without markdown formatting. The JSON must have:
+      {
+        "atsScore": <number 0-100>,
+        "matchPercent": <number 0-100>,
+        "matched": ["keyword1", "keyword2", ...up to 10],
+        "missing": ["keyword1", "keyword2", ...up to 6],
+        "tips": ["tip 1", "tip 2", ...up to 5],
+        "detectedRole": "<detected job role>"
       }
-    }
+    `;
 
-    // Save history to user if authenticated
-    if (user) {
-      user.analysisHistory.push({
-        score: result.score,
-        matchPercent: result.matchPercent,
-        jobTitle: jobTitle || req.body.jobTitle || 'Analyzed Resume'
+    const result = await callGeminiWithRetry(model, prompt);
+    const responseText = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+    const aiResponse = JSON.parse(responseText);
+
+    const userId = getUserIdFromRequest(req);
+
+    if (userId) {
+      await User.findByIdAndUpdate(userId, {
+        $push: {
+          analysisHistory: {
+            atsScore: aiResponse.atsScore,
+            matchPercentage: aiResponse.matchPercent,
+            role: aiResponse.detectedRole,
+          }
+        }
       });
-      await user.save();
     }
 
-    res.json({ success: true, data: result });
+    res.json({ success: true, data: aiResponse });
+
   } catch (error) {
+    console.error("ATS Analysis Error:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };

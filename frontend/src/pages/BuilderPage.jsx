@@ -1,24 +1,24 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
+import { useParams, useNavigate, Link } from 'react-router-dom' // FIX: Added routing hooks
 import { motion, AnimatePresence } from 'framer-motion'
 import { useReactToPrint } from 'react-to-print'
+import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
 import ResumePreview from '../components/ui/ResumePreview'
 import EditorSection from '../components/ui/EditorSection'
 import api from '../utils/api'
 import { Save, Printer, Download, Eye, EyeOff } from 'lucide-react'
 
-const DEFAULT_RESUME = {
-  personal: { name: 'Alex Johnson', title: 'Senior Software Engineer', email: 'alex@email.com', phone: '(555) 123-4567', location: 'San Francisco, CA', linkedin: 'linkedin.com/in/alexjohnson', website: '' },
-  summary: 'Results-driven software engineer with 6+ years of experience building scalable web applications. Proven track record of delivering high-quality software solutions and mentoring cross-functional teams.',
-  experience: [
-    { id: 1, company: 'TechCorp Inc.', role: 'Senior Software Engineer', period: '2021 – Present', bullets: ['Led development of microservices architecture serving 2M+ daily users', 'Reduced API response times by 40% through Redis caching implementation', 'Mentored a team of 5 junior engineers, improving code quality by 35%'] },
-    { id: 2, company: 'StartupXYZ', role: 'Software Engineer', period: '2019 – 2021', bullets: ['Built React dashboard used by 500+ enterprise clients globally', 'Implemented CI/CD pipeline reducing deployment time by 60%'] },
-  ],
-  education: [{ id: 1, school: 'UC Berkeley', degree: 'B.S. Computer Science', period: '2015 – 2019', gpa: '3.8/4.0' }],
-  skills: { technical: ['React', 'Node.js', 'TypeScript', 'Python', 'AWS', 'Docker', 'MongoDB', 'PostgreSQL', 'Redis', 'GraphQL'], soft: ['Leadership', 'Agile/Scrum', 'Communication', 'Problem Solving'] },
-  projects: [{ id: 1, name: 'OpenSource API Framework', desc: 'Built a REST API framework with 2K+ GitHub stars and 300+ contributors', tech: 'Node.js, Express, MongoDB', link: '' }],
-  certifications: [{ id: 1, name: 'AWS Solutions Architect', issuer: 'Amazon Web Services', date: '2023' }],
-  achievements: ['Top 1% performer in company-wide hackathon 2023', 'Speaker at ReactConf 2022 — "Scaling React at Enterprise"', 'Open-source contributor with 500+ GitHub stars'],
+// FIX: Dummy data ko hata kar ek empty structure banaya
+const EMPTY_RESUME = {
+  personal: { name: '', title: '', email: '', phone: '', location: '', linkedin: '', website: '' },
+  summary: '',
+  experience: [],
+  education: [],
+  skills: { technical: [], soft: [] },
+  projects: [],
+  certifications: [],
+  achievements: [],
 }
 
 const SECTIONS = [
@@ -40,36 +40,77 @@ const TEMPLATES = [
 ]
 
 export default function BuilderPage() {
-  const [data, setData]               = useState(DEFAULT_RESUME)
+  const { id } = useParams() // FIX: URL se ID pakadna
+  const navigate = useNavigate()
+  const { isLoggedIn } = useAuth()
+
+  const [data, setData]               = useState(EMPTY_RESUME)
   const [activeSection, setSection]   = useState('personal')
   const [template, setTemplate]       = useState('classic')
   const [saving, setSaving]           = useState(false)
-  const [showPreview, setShowPreview] = useState(false) // mobile toggle
-  const [resumeId, setResumeId]       = useState(null) // Track existing resume ID
+  const [loading, setLoading]         = useState(!!id) // FIX: Agar URL me ID hai toh loading true hogi
+  const [showPreview, setShowPreview] = useState(false)
+  const [resumeId, setResumeId]       = useState(id || null) 
   const previewRef = useRef(null)
+
+  // FIX: Component load hote hi Database se data fetch karna
+  useEffect(() => {
+    if (id) {
+      const fetchResume = async () => {
+        try {
+          const response = await api.get(`/resume/${id}`)
+          const fetchedData = response.data.data
+
+          // Backend data ko state mein set karna
+          setData({
+            personal: fetchedData.personal || EMPTY_RESUME.personal,
+            summary: fetchedData.summary || '',
+            experience: fetchedData.experience || [],
+            education: fetchedData.education || [],
+            skills: fetchedData.skills || EMPTY_RESUME.skills,
+            projects: fetchedData.projects || [],
+            certifications: fetchedData.certifications || [],
+            achievements: fetchedData.achievements || [],
+          })
+          setTemplate(fetchedData.template || 'classic')
+          setResumeId(fetchedData._id)
+        } catch (err) {
+          console.error("Fetch error:", err)
+          toast.error('Failed to load resume data')
+          navigate('/dashboard') // Error aaye toh wapas bhej do
+        } finally {
+          setLoading(false)
+        }
+      }
+      fetchResume()
+    }
+  }, [id, navigate])
 
   const handlePrint = useReactToPrint({ content: () => previewRef.current, documentTitle: `${data.personal.name || 'Resume'} - ResumeAI` })
 
   const handleSave = async () => {
     setSaving(true)
     try {
+      const payload = { ...data, template, title: `${data.personal.name || 'My'} Resume` }
+      
       if (resumeId) {
         // Update existing resume
-        await api.put(`/resume/${resumeId}`, { ...data, template, title: `${data.personal.name || 'My'} Resume` })
+        await api.put(`/resume/${resumeId}`, payload)
         toast.success('Resume updated successfully!')
       } else {
         // Create new resume
-        const response = await api.post('/resume', { ...data, template, title: `${data.personal.name || 'My'} Resume` })
-        // Assume API returns created document with _id
-        if (response.data && response.data._id) {
-          setResumeId(response.data._id)
+        const response = await api.post('/resume', payload)
+        if (response.data && response.data.data && response.data.data._id) {
+          setResumeId(response.data.data._id)
+          // URL update kar do bina page refresh kiye
+          window.history.replaceState(null, '', `/builder/${response.data.data._id}`)
         }
         toast.success('Resume saved successfully!')
       }
-    } catch {
-      // Not logged in or server off — save locally
+    } catch (err) {
+      console.error(err)
       localStorage.setItem('rai_draft', JSON.stringify({ data, template }))
-      toast.success('Draft saved locally!')
+      toast.success('Draft saved locally! (Server Error)')
     } finally {
       setSaving(false)
     }
@@ -79,6 +120,15 @@ export default function BuilderPage() {
     setData(prev => ({ ...prev, [section]: value }))
   }, [])
 
+  // FIX: Loading screen dikhana jab data fetch ho raha ho
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-slate-50">
+        <span className="text-slate-600 font-medium">Loading your resume...</span>
+      </div>
+    )
+  }
+
   return (
     <div className="bg-slate-50 min-h-screen flex flex-col" style={{ paddingTop: '4rem' }}>
 
@@ -86,6 +136,11 @@ export default function BuilderPage() {
       <div className="no-print sticky top-16 z-30 bg-white border-b border-slate-200 px-4 py-3 flex items-center gap-3 shadow-sm">
         <div className="flex-1 flex items-center gap-2 min-w-0">
           <span className="text-slate-700 font-bold text-sm hidden sm:block shrink-0">Resume Builder</span>
+          {isLoggedIn && (
+            <Link to="/dashboard" className="text-xs text-slate-500 hover:text-slate-700 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors">
+              ← Dashboard
+            </Link>
+          )}
           <select value={template} onChange={e => setTemplate(e.target.value)}
             className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer">
             {TEMPLATES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
@@ -93,7 +148,6 @@ export default function BuilderPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Mobile preview toggle */}
           <button onClick={() => setShowPreview(!showPreview)} className="lg:hidden flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors">
             {showPreview ? <EyeOff size={13} /> : <Eye size={13} />}
             {showPreview ? 'Editor' : 'Preview'}

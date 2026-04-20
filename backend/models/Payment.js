@@ -4,10 +4,9 @@ const paymentSchema = new mongoose.Schema({
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true,
+    required: [true, 'User reference is required'],
     index: true,
   },
-
   razorpayOrderId: {
     type: String,
     required: [true, 'Razorpay Order ID is required'],
@@ -17,7 +16,7 @@ const paymentSchema = new mongoose.Schema({
   razorpayPaymentId: {
     type: String,
     unique: true,
-    sparse: true, // allows null until payment is captured
+    sparse: true, // allows null until payment is completed
     trim: true,
   },
   razorpaySignature: {
@@ -27,69 +26,17 @@ const paymentSchema = new mongoose.Schema({
   amount: {
     type: Number,
     required: [true, 'Amount is required'],
-    min: [0, 'Amount cannot be negative'],
-=======
-  orderId: {
-    type: String,
-    required: true,
-    unique: true,
-    index: true,
-  },
-  paymentId: {
-    type: String,
-    unique: true,
-    sparse: true,
-    index: true,
-  },
-  signature: {
-    type: String,
-    default: '',
-  },
-  amount: {
-    type: Number,
-    required: true,
-    min: 1,
-
-    
+    min: [1, 'Amount must be at least 1 paise'],
   },
   currency: {
     type: String,
     default: 'INR',
-    uppercase: true,
-
-  },
-  status: {
-    type: String,
-    enum: ['created', 'authorized', 'captured', 'refunded', 'failed'],
-    default: 'created',
-  },
-  plan: {
-    type: String,
-    enum: ['pro-monthly', 'pro-yearly', 'credits-pack'],
-    required: [true, 'Plan type is required'],
+    enum: ['INR', 'USD', 'EUR'],
   },
   creditsAwarded: {
     type: Number,
-    default: 0,
-    min: 0,
-  },
-  receipt: {
-    type: String,
-    trim: true,
-  },
-  failureReason: {
-    type: String,
-    default: '',
-  },
-  paidAt: {
-
-    trim: true,
-  },
-  credits: {
-    type: Number,
-    required: true,
     default: 150,
-    min: 1,
+    min: [0, 'Credits cannot be negative'],
   },
   status: {
     type: String,
@@ -97,9 +44,23 @@ const paymentSchema = new mongoose.Schema({
     default: 'created',
     index: true,
   },
+  plan: {
+    type: String,
+    enum: ['pro-monthly', 'pro-yearly', 'credits-pack'],
+    required: [true, 'Plan type is required'],
+  },
   receipt: {
     type: String,
     default: '',
+    trim: true,
+  },
+  failureReason: {
+    type: String,
+    default: '',
+  },
+  paidAt: {
+    type: Date,
+    default: null,
   },
   gateway: {
     type: String,
@@ -109,27 +70,17 @@ const paymentSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.Mixed,
     default: {},
   },
-  verifiedAt: {
-
-    type: Date,
-  },
 }, { timestamps: true });
-
 
 // ─── Indexes ────────────────────────────────────────────────────────
 paymentSchema.index({ user: 1, createdAt: -1 });
-paymentSchema.index({ status: 1 });
-paymentSchema.index({ razorpayOrderId: 1 }, { unique: true });
 
-// ─── Pre-save: set paidAt when status changes to captured ──────────
+// ─── Pre-save hook: set paidAt when status changes to paid ──────────
 paymentSchema.pre('save', function (next) {
-  if (this.isModified('status') && this.status === 'captured' && !this.paidAt) {
+  if (this.isModified('status') && this.status === 'paid' && !this.paidAt) {
     this.paidAt = new Date();
   }
   next();
 });
 
 module.exports = mongoose.model('Payment', paymentSchema);
-
-module.exports = mongoose.model('Payment', paymentSchema);
-

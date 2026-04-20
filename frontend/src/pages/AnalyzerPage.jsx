@@ -1,11 +1,12 @@
 import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
+import { useAuth } from '../context/AuthContext'
 import PageWrapper from '../components/ui/PageWrapper'
 import ATSScoreCard from '../components/ui/ATSScoreCard'
 import api from '../utils/api'
-import { Upload, FileText, ChevronRight } from 'lucide-react'
+import { Upload, FileText, ChevronRight, Mic2, X } from 'lucide-react'
 
 const STEPS = [
   'Parsing resume structure…',
@@ -17,6 +18,8 @@ const STEPS = [
 ]
 
 export default function AnalyzerPage() {
+  const { isLoggedIn } = useAuth()
+  const navigate = useNavigate()
   const [resumeText, setResumeText]   = useState('')
   const [jdText, setJdText]           = useState('')
   const [fileName, setFileName]       = useState('')
@@ -26,6 +29,30 @@ export default function AnalyzerPage() {
   const [progressLabel, setLabel]     = useState('')
   const [result, setResult]           = useState(null)
   const fileRef = useRef(null)
+
+  const handleRemoveFile = () => {
+    setFileName('')
+    setFileObj(null)
+  }
+
+  const handleStartInterview = () => {
+    if (!result || !isLoggedIn) {
+      toast.error('Please log in and analyze a resume first')
+      return
+    }
+    
+    // Generate a session ID for this mock interview
+    const sessionId = `interview_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    
+    // Navigate to interview page with state containing job description and detected role
+    navigate(`/interview/${sessionId}`, {
+      state: {
+        jobDescription: jdText,
+        detectedRole: result.detectedRole || 'Analyzed Position',
+        resumeText: resumeText
+      }
+    })
+  }
 
   const handleFile = (e) => {
     const f = e.target.files[0]
@@ -96,6 +123,13 @@ export default function AnalyzerPage() {
             ATS Resume <span className="grad-text">Analyzer</span>
           </h1>
           <p className="text-slate-400 text-lg">Upload your resume and paste a job description for instant ATS analysis.</p>
+          {isLoggedIn && (
+            <div className="mt-6 flex justify-center">
+              <Link to="/dashboard" className="text-slate-300 hover:text-white text-sm font-medium px-4 py-2 rounded-lg bg-slate-800/50 hover:bg-slate-700/50 transition-colors">
+                ← Back to Dashboard
+              </Link>
+            </div>
+          )}
         </motion.div>
 
         <div className="grid lg:grid-cols-2 gap-6">
@@ -120,7 +154,16 @@ export default function AnalyzerPage() {
                   <Upload size={24} strokeWidth={1.8} className="text-brand-600" />
                 </div>
                 {fileName
-                  ? <p className="font-semibold text-brand-600">✓ {fileName}</p>
+                  ? <div className="flex items-center justify-center gap-2 flex-wrap">
+                      <p className="font-semibold text-brand-600">✓ {fileName}</p>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handleRemoveFile() }}
+                        className="inline-flex items-center justify-center w-6 h-6 rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        title="Remove file"
+                      >
+                        <X size={16} strokeWidth={2.5} />
+                      </button>
+                    </div>
                   : <>
                     <p className="font-semibold text-slate-700 mb-1">Drop your resume here or click to browse</p>
                     <p className="text-sm text-slate-400">PDF, DOCX, or TXT · up to 5MB</p>
@@ -195,7 +238,17 @@ export default function AnalyzerPage() {
               {!loading && result && (
                 <motion.div key="result" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
                   <ATSScoreCard result={result} />
-                  <Link to="/builder" className="btn-primary w-full py-3.5 text-sm mt-4 rounded-xl">Build Optimized Resume →</Link>
+                  <div className="flex flex-col gap-3 mt-4">
+                    <Link to="/builder" className="btn-primary w-full py-3.5 text-sm rounded-xl flex items-center justify-center gap-2">
+                      Build Optimized Resume <ChevronRight size={16} />
+                    </Link>
+                    {isLoggedIn && (
+                      <button onClick={handleStartInterview} className="btn-ghost w-full py-3.5 text-sm rounded-xl flex items-center justify-center gap-2">
+                        <Mic2 size={16} />
+                        Start Interview for this Role
+                      </button>
+                    )}
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>
