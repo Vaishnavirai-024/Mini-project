@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Link } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import PageWrapper from '../components/ui/PageWrapper'
 import TemplateCard from '../components/ui/TemplateCard'
 import api from '../utils/api'
@@ -24,6 +25,7 @@ const FILTERS = [
 ]
 
 export default function TemplatesPage() {
+  const { isLoggedIn } = useAuth()
   const [templates, setTemplates] = useState(FALLBACK_TEMPLATES)
   const [filter, setFilter]       = useState('all')
   const [loading, setLoading]     = useState(true)
@@ -49,6 +51,13 @@ export default function TemplatesPage() {
           <p className="text-slate-400 text-lg max-w-xl mx-auto mb-8">
             All templates are ATS-optimized, professionally designed, and ready to customize.
           </p>
+          {isLoggedIn && (
+            <div className="flex justify-center mb-6">
+              <Link to="/dashboard" className="text-slate-300 hover:text-white text-sm font-medium px-4 py-2 rounded-lg bg-slate-800/50 hover:bg-slate-700/50 transition-colors">
+                ← Back to Dashboard
+              </Link>
+            </div>
+          )}
 
           {/* Filter tabs */}
           <div className="flex flex-wrap justify-center gap-2">

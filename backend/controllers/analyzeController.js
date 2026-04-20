@@ -1,6 +1,8 @@
 const multer = require('multer');
+const jwt = require('jsonwebtoken');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const User = require('../models/User');
+const { callGeminiWithRetry } = require('../utils/geminiRetry');
 
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -12,6 +14,25 @@ const fileFilter = (req, file, cb) => {
   else cb(new Error('Only PDF files are allowed for ATS analysis'), false);
 };
 const upload = multer({ storage, fileFilter, limits: { fileSize: 5 * 1024 * 1024 } });
+
+const getUserIdFromRequest = (req) => {
+  if (req.user?._id || req.user?.id) {
+    return req.user._id || req.user.id;
+  }
+
+  const authHeader = req.headers.authorization || '';
+  if (!authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+
+  try {
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
+    return decoded.id || null;
+  } catch (error) {
+    return null;
+  }
+};
 
 // ─── @desc    Analyze PDF Resume using Gemini 2.5 Flash
 // ─── @route   POST /api/analyze/upload
@@ -47,18 +68,19 @@ const analyzeUpload = async (req, res) => {
     `;
 
     // Call Gemini with Prompt + PDF file
-    const result = await model.generateContent([prompt, pdfPart]);
+    const result = await callGeminiWithRetry(model, [prompt, pdfPart]);
     const responseText = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
     const aiResponse = JSON.parse(responseText);
 
-    // Save history if user is authenticated
-    if (req.user) {
-      await User.findByIdAndUpdate(req.user._id, {
+    const userId = getUserIdFromRequest(req);
+
+    if (userId) {
+      await User.findByIdAndUpdate(userId, {
         $push: {
           analysisHistory: {
             atsScore: aiResponse.atsScore,
             matchPercentage: aiResponse.matchPercent,
-            role: aiResponse.detectedRole || 'Analyzed Role'
+            role: aiResponse.detectedRole,
           }
         }
       });
@@ -102,18 +124,19 @@ const analyzeText = async (req, res) => {
       }
     `;
 
-    const result = await model.generateContent(prompt);
+    const result = await callGeminiWithRetry(model, prompt);
     const responseText = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
     const aiResponse = JSON.parse(responseText);
 
-    // Save history if user is authenticated
-    if (req.user) {
-      await User.findByIdAndUpdate(req.user._id, {
+    const userId = getUserIdFromRequest(req);
+
+    if (userId) {
+      await User.findByIdAndUpdate(userId, {
         $push: {
           analysisHistory: {
             atsScore: aiResponse.atsScore,
             matchPercentage: aiResponse.matchPercent,
-            role: aiResponse.detectedRole || 'Analyzed Role'
+            role: aiResponse.detectedRole,
           }
         }
       });

@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
+import { useAuth } from '../context/AuthContext'
 import PageWrapper from '../components/ui/PageWrapper'
 import FeatureCard from '../components/ui/FeatureCard'
 
@@ -92,6 +93,8 @@ function Stat({ value, label }) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function LandingPage() {
+  const { isLoggedIn } = useAuth()
+  
   return (
     <PageWrapper>
       {/* HERO */}
@@ -122,6 +125,12 @@ export default function LandingPage() {
             </p>
 
             <div className="flex flex-wrap gap-4">
+              {isLoggedIn && (
+                <Link to="/dashboard" className="btn-primary px-7 py-4 text-base">
+                  <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 1 18 0a9 9 0 0 1-18 0M12 6v6m0 0v6" /></svg>
+                  Go to Dashboard
+                </Link>
+              )}
               <Link to="/analyzer" className="btn-primary px-7 py-4 text-base">
                 <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                 Analyze Resume

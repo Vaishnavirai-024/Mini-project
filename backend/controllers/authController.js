@@ -28,7 +28,7 @@ const register = async (req, res) => {
     res.status(201).json({
       success: true,
       token,
-      user: { id: user._id, name: user.name, email: user.email, plan: user.plan, credits: user.credits },
+      user: { id: user._id, name: user.name, email: user.email, plan: user.plan, credits: user.credits, analysisHistory: user.analysisHistory || [] },
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -51,7 +51,7 @@ const login = async (req, res) => {
       return res.json({
         success: true,
         token,
-        user: { id: 'demo-user-id', name: 'Demo User', email: 'demo@resumeai.com', plan: 'pro', credits: 0 },
+        user: { id: 'demo-user-id', name: 'Demo User', email: 'demo@resumeai.com', plan: 'pro', credits: 0, analysisHistory: [] },
       });
     }
 
@@ -64,7 +64,7 @@ const login = async (req, res) => {
     res.json({
       success: true,
       token,
-      user: { id: user._id, name: user.name, email: user.email, plan: user.plan, credits: user.credits },
+      user: { id: user._id, name: user.name, email: user.email, plan: user.plan, credits: user.credits, analysisHistory: user.analysisHistory || [] },
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -75,8 +75,33 @@ const login = async (req, res) => {
 // @route   GET /api/auth/me
 const getMe = async (req, res) => {
   try {
-    res.json({ success: true, user: req.user });
+    const userId = req.user.id || req.user._id;
+
+    // Fetch user with analysisHistory included for dashboard/history views
+    const user = await User.findById(userId)
+      .select('+analysisHistory')
+      .lean();
+    
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const userData = {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      plan: user.plan,
+      credits: user.credits,
+      analysisHistory: Array.isArray(user.analysisHistory) ? user.analysisHistory : []
+    };
+
+    res.json({ 
+      success: true, 
+      data: userData,
+      user: userData // Also include user for backward compatibility
+    });
   } catch (error) {
+    console.error('Error in getMe:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };

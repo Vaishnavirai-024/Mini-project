@@ -1,5 +1,6 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai'); // ✅ Correct standard package
 const User = require('../models/User');
+const { callGeminiWithRetry } = require('../utils/geminiRetry');
 
 const INTERVIEW_CREDIT_COST = 50;
 
@@ -51,7 +52,7 @@ const generateQuestions = async (req, res) => {
     `;
 
     // 4. Get Response
-    const result = await model.generateContent(prompt);
+    const result = await callGeminiWithRetry(model, prompt);
     const questions = extractJson(result.response.text());
 
     if (!Array.isArray(questions) || questions.length !== 5) {
@@ -113,7 +114,7 @@ const evaluateAnswer = async (req, res) => {
       }
     `;
 
-    const result = await model.generateContent(prompt);
+    const result = await callGeminiWithRetry(model, prompt);
     const evaluation = extractJson(result.response.text());
 
     return res.json({

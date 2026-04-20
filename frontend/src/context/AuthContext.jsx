@@ -15,8 +15,13 @@ export function AuthProvider({ children }) {
         api.defaults.headers.common['Authorization'] = `Bearer ${token}`
         try {
           const { data } = await api.get('/auth/me')
-          if (data.success) setUser(data.user)
-        } catch {
+          if (data.success) {
+            // Handle multiple response formats for user data
+            const userData = data.data || data.user || data
+            setUser(userData)
+          }
+        } catch (err) {
+          console.error('Token verification failed:', err)
           // token invalid
           localStorage.removeItem('rai_token')
           setToken(null)
